@@ -9,6 +9,14 @@ var rtc = {
   remoteStreams: [],
   params: {},
 };
+var rtc_screen = {
+  client: null,
+  joined: false,
+  published: false,
+  localStream: null,
+  remoteStreams: [],
+  params: {},
+};
 
 // Options for joining a channel
 var option = {
@@ -20,8 +28,9 @@ var option = {
   secret: '',
 };
 rtc.client = AgoraRTC.createClient({ mode: 'rtc', codec: 'h264' });
+rtc_screen.client = AgoraRTC.createClient({ mode: 'rtc', codec: 'h264' });
 async function joinChannel(role) {
-  if (rtc.localScreenTrack) leaveScreenShare();
+  // if (rtc.localScreenTrack) leaveScreenShare();
   // Create a client
   const uid = await rtc.client.join(
     option.appId,
@@ -48,7 +57,9 @@ async function joinChannel(role) {
     el.id = 'local_stream';
     el.style.width = '400px';
     el.style.height = '400px';
-    document.body.append(el);
+    // document.body.append(el);
+    const div = document.getElementById('host');
+    div.appendChild(el);
     // Play the remote video track.
     // Pass the DIV container and the SDK dynamically creates a player in the container for playing the remote video track.
     rtc.localVideoTrack.play(el);
@@ -88,70 +99,75 @@ async function joinChannel(role) {
       remoteStream.pause('remote_video_');
       console.log('stream-unsubscribed remote-uid: ', id);
     });
+    rtc.client.on('user-published', async (user, mediaType) => {
+      // Subscribe to a remote user.
+      await rtc.client.subscribe(user, mediaType);
+      console.log('subscribe success');
+
+      // If the subscribed track is video.
+      if (mediaType === 'video') {
+        // Get `RemoteVideoTrack` in the `user` object.
+        const remoteVideoTrack = user.videoTrack;
+        // Dynamically create a container in the form of a DIV element for playing the remote video track.
+
+        // Specify the ID of the DIV container. You can use the `uid` of the remote user.
+        const playerContainer = document.getElementById('audience');
+        const el = document.createElement('div');
+        el.id = 'remote_video_';
+        el.style.width = '400px';
+        el.style.height = '400px';
+        playerContainer.appendChild(el);
+        // Play the remote video track.
+        // Pass the DIV container and the SDK dynamically creates a player in the container for playing the remote video track.
+        remoteVideoTrack.play(el);
+
+        // Or just pass the ID of the DIV container.
+        // remoteVideoTrack.play(playerContainer.id);
+      }
+
+      // If the subscribed track is audio.
+      if (mediaType === 'audio') {
+        // Get `RemoteAudioTrack` in the `user` object.
+        const remoteAudioTrack = user.audioTrack;
+        // Play the audio track. No need to pass any DOM element.
+        remoteAudioTrack.play();
+      }
+    });
+    rtc.client.on('user-unpublished', async (user) => {
+      // Get the dynamically created DIV container.
+      await rtc.client.unsubscribe(user);
+      const playerContainer = document.getElementById('remote_video_');
+      if (playerContainer) playerContainer.remove();
+
+      location.reload();
+      // Destroy the container.
+    });
   }
-  rtc.client.on('user-published', async (user, mediaType) => {
-    // Subscribe to a remote user.
-    await rtc.client.subscribe(user, mediaType);
-    console.log('subscribe success');
-
-    // If the subscribed track is video.
-    if (mediaType === 'video') {
-      // Get `RemoteVideoTrack` in the `user` object.
-      const remoteVideoTrack = user.videoTrack;
-      // Dynamically create a container in the form of a DIV element for playing the remote video track.
-
-      // Specify the ID of the DIV container. You can use the `uid` of the remote user.
-      // const playerContainer = document.getElementById('remote_video_');
-      const el = document.createElement('div');
-      el.id = 'remote_video_';
-      el.style.width = '400px';
-      el.style.height = '400px';
-      document.body.append(el);
-      // Play the remote video track.
-      // Pass the DIV container and the SDK dynamically creates a player in the container for playing the remote video track.
-      remoteVideoTrack.play(el);
-
-      // Or just pass the ID of the DIV container.
-      // remoteVideoTrack.play(playerContainer.id);
-    }
-
-    // If the subscribed track is audio.
-    if (mediaType === 'audio') {
-      // Get `RemoteAudioTrack` in the `user` object.
-      const remoteAudioTrack = user.audioTrack;
-      // Play the audio track. No need to pass any DOM element.
-      remoteAudioTrack.play();
-    }
-  });
-  rtc.client.on('user-unpublished', (user) => {
-    // Get the dynamically created DIV container.
-    const playerContainer = document.getElementById('remote_video_');
-    if (playerContainer) playerContainer.remove();
-    // location.reload();
-    // Destroy the container.
-  });
 }
 
 async function shareScreen() {
-  if (rtc.localAudioTrack) leaveEventHost('host');
-  const uid = await rtc.client.join(
+  // if (rtc.localAudioTrack) leaveEventHost('host');
+  const uid = await rtc_screen.client.join(
     option.appId,
     option.channel,
     option.token,
     null
   );
-  rtc.localScreenTrack = await AgoraRTC.createScreenVideoTrack({
+
+  rtc_screen.localScreenTrack = await AgoraRTC.createScreenVideoTrack({
     // Set the encoder configurations. For details, see the API description.
     encoderConfig: '1080p_1',
   });
-  await rtc.client.publish([rtc.localScreenTrack]);
+  await rtc_screen.client.publish([rtc_screen.localScreenTrack]);
 
   const el = document.createElement('div');
-  el.id = 'local_stream';
+  el.id = 'local_screen_stream';
   el.style.width = '400px';
   el.style.height = '400px';
-  document.body.append(el);
-  rtc.localScreenTrack.play(el);
+  // document.body.append(el);
+  const div = document.getElementById('host');
+  div.appendChild(el);
+  rtc_screen.localScreenTrack.play(el);
 }
 
 function mute() {
@@ -163,16 +179,16 @@ function unmute() {
   else rtc.localVideoTrack.setEnabled(true);
 }
 function leaveScreenShare(params) {
-  rtc.localScreenTrack.close();
-  rtc.client.unpublish(rtc.localScreenTrack, function (err) {
+  rtc_screen.localScreenTrack.close();
+  rtc_screen.client.unpublish(rtc.localScreenTrack, function (err) {
     console.log('publish failed');
     console.error(err);
   });
 
-  rtc.client.leave(function (ev) {
+  rtc_screen.client.leave(function (ev) {
     console.log(ev);
   });
-  const playerContainer = document.getElementById('local_stream');
+  const playerContainer = document.getElementById('local_screen_stream');
   if (playerContainer) playerContainer.remove();
 }
 function leaveEventHost(params) {
@@ -189,8 +205,17 @@ function leaveEventHost(params) {
   const playerContainer = document.getElementById('local_stream');
   if (playerContainer) playerContainer.remove();
 }
+function togglePictureInPicture() {
+  if (document.pictureInPictureElement) {
+    document.exitPictureInPicture();
+  } else if (document.pictureInPictureEnabled) {
+    video.requestPictureInPicture();
+  }
+}
 
 function leaveEventAudience(params) {
+  const playerContainer = document.getElementById('remote_video_');
+  if (playerContainer) playerContainer.remove();
   rtc.client.leave(
     function () {
       console.log('client leaves channel');
@@ -219,12 +244,8 @@ function LiveVideoStreaming(props) {
 
       <button onClick={() => mute()}>mute</button>
       <button onClick={() => unmute()}>unmute</button>
-      {/* <div
-        id="local_stream"
-        className="local_stream"
-        style={{ width: '400px', height: '400px' }}
-      ></div> */}
-      {/* <div id="remote_video_" style={{ width: '400px', height: '400px' }} /> */}
+      <div id="host"></div>
+      <div id="audience"></div>
     </div>
   );
 }
